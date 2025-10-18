@@ -5,6 +5,13 @@
 #include <unistd.h>
 
 // ==============================
+// Global variables for history
+// ==============================
+#define HISTORY_SIZE 20
+char *history[HISTORY_SIZE];
+int hist_count = 0;
+
+// ==============================
 // Function: read_cmd()
 // ==============================
 char* read_cmd(char* prompt, FILE* fp) {
@@ -71,9 +78,25 @@ char** tokenize(char* cmdline) {
 }
 
 // ==============================
+// Function: add_to_history()
+// ==============================
+void add_to_history(char *cmdline) {
+    if (cmdline == NULL || strlen(cmdline) == 0)
+        return;
+
+    if (hist_count < HISTORY_SIZE) {
+        history[hist_count++] = strdup(cmdline);
+    } else {
+        free(history[0]);
+        for (int i = 1; i < HISTORY_SIZE; i++)
+            history[i - 1] = history[i];
+        history[HISTORY_SIZE - 1] = strdup(cmdline);
+    }
+}
+
+// ==============================
 // Function: handle_builtin()
 // ==============================
-// Handles built-in shell commands like cd, exit, help, and jobs
 int handle_builtin(char **args)
 {
     if (args == NULL || args[0] == NULL)
@@ -97,10 +120,12 @@ int handle_builtin(char **args)
     // help command
     else if (strcmp(args[0], "help") == 0) {
         printf("Built-in commands:\n");
-        printf("  cd <dir>   : change directory\n");
-        printf("  help       : show this help message\n");
-        printf("  exit       : exit the shell\n");
-        printf("  jobs       : list background jobs (not yet implemented)\n");
+        printf("  cd <dir>     - Change directory\n");
+        printf("  help         - Show this help message\n");
+        printf("  exit         - Exit the shell\n");
+        printf("  jobs         - Show background jobs (not yet implemented)\n");
+        printf("  history      - Show command history\n");
+        printf("  !n           - Re-run nth command from history\n");
         return 1;
     }
 
@@ -110,7 +135,15 @@ int handle_builtin(char **args)
         return 1;
     }
 
-    // Not a built-in command → return 0 so execute() runs
+    // history command
+    else if (strcmp(args[0], "history") == 0) {
+        for (int i = 0; i < hist_count; i++) {
+            printf("%d  %s\n", i + 1, history[i]);
+        }
+        return 1;
+    }
+
+    // Not a built-in command
     return 0;
 }
 
