@@ -10,12 +10,11 @@
 #define MAXARGS 64
 #define ARGLEN  64
 
-// Core shell functions
 char* read_cmd(char* prompt, FILE* fp);
 char** tokenize(char* cmdline);
 int execute(char** arglist);
 int handle_builtin(char **args);
-int find_pipe(char **arglist);
+int find_pipe(char **args);
 
 #endif
 
