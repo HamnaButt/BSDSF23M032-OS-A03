@@ -1,0 +1,6 @@
+bin
+files.txt
+include
+Makefile
+obj
+src
