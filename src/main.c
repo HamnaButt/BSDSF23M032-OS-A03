@@ -10,48 +10,32 @@ int main()
     int result;
 
     while (1) {
-        // 1. Display prompt & read command
+        // Readline handles prompt, editing, and history
         cmdline = read_cmd("myshell> ", stdin);
 
-        // Handle Ctrl+D (EOF)
-        if (cmdline == NULL) {
+        if (cmdline == NULL) {  // Ctrl+D exits
             printf("\nExiting shell...\n");
             break;
         }
 
-        // 2. Handle !n command before adding to history
-        if (cmdline[0] == '!' && strlen(cmdline) > 1) {
-            int n = atoi(cmdline + 1);
-            if (n > 0 && n <= hist_count) {
-                free(cmdline);
-                cmdline = strdup(history[n - 1]);
-                printf("%s\n", cmdline);
-            } else {
-                printf("No such command in history.\n");
-                free(cmdline);
-                continue;
-            }
+        // Skip empty input
+        if (strlen(cmdline) == 0) {
+            free(cmdline);
+            continue;
         }
 
-        // 3. Add to history
-        add_to_history(cmdline);
-
-        // 4. Tokenize the command line
+        // Split into tokens
         arglist = tokenize(cmdline);
-
-        // 5. Skip empty lines
         if (arglist == NULL) {
             free(cmdline);
             continue;
         }
 
-        // 6. Handle built-ins first
-        if (!handle_builtin(arglist)) {
-            // 7. Execute external commands
+        // Handle built-in or external command
+        if (!handle_builtin(arglist))
             result = execute(arglist);
-        }
 
-        // 8. Free memory
+        // Free memory
         free(cmdline);
         for (int i = 0; arglist[i] != NULL; i++)
             free(arglist[i]);

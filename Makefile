@@ -1,24 +1,26 @@
-# Simple Makefile for OS Assignment 03
+# ========== Makefile for myshell ==========
 
-CC = gcc
-CFLAGS = -Iinclude
-OBJDIR = obj
-BINDIR = bin
+CC       = gcc
+CFLAGS   = -Iinclude
+LDFLAGS  = -lreadline        # ✅ Link GNU Readline library
+SRC      = src/main.c src/shell.c src/execute.c
+OBJ      = obj/main.o obj/shell.o obj/execute.o
+BIN      = bin/myshell
 
-SRC = $(wildcard src/*.c)
-OBJ = $(patsubst src/%.c, $(OBJDIR)/%.o, $(SRC))
-TARGET = $(BINDIR)/myshell
+# Default target
+all: $(BIN)
 
-all: $(TARGET)
+# Build final binary
+$(BIN): $(OBJ)
+	$(CC) $(OBJ) -o $(BIN) $(LDFLAGS)
 
-$(TARGET): $(OBJ)
-	@mkdir -p $(BINDIR)
-	$(CC) $(OBJ) -o $(TARGET)
-
-$(OBJDIR)/%.o: src/%.c
-	@mkdir -p $(OBJDIR)
+# Compile object files
+obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Clean build artifacts
 clean:
-	rm -rf $(OBJDIR) $(BINDIR)
+	rm -f obj/*.o $(BIN)
+
+.PHONY: all clean
 

@@ -3,41 +3,40 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <readline/readline.h>   // ✅ Readline input
+#include <readline/history.h>    // ✅ History & completion
 
-// ==============================
-// Global variables for history
-// ==============================
 #define HISTORY_SIZE 20
-char *history[HISTORY_SIZE];
+char *history_store[HISTORY_SIZE];
 int hist_count = 0;
 
-// ==============================
-// Function: read_cmd()
-// ==============================
+/* ==========================================================
+ * read_cmd() — Now uses GNU Readline instead of manual input
+ * ========================================================== */
 char* read_cmd(char* prompt, FILE* fp) {
-    printf("%s", prompt);
-    char* cmdline = (char*) malloc(sizeof(char) * MAX_LEN);
-    int c, pos = 0;
+    (void)fp;  // fp unused; readline handles its own input
 
-    while ((c = getc(fp)) != EOF) {
-        if (c == '\n') break;
-        cmdline[pos++] = c;
-    }
+    char *cmdline = readline(prompt);
 
-    if (c == EOF && pos == 0) {
+    if (cmdline == NULL)  // Ctrl+D pressed
+        return NULL;
+
+    // If user just pressed Enter, return empty string
+    if (strlen(cmdline) == 0) {
         free(cmdline);
-        return NULL; // Handle Ctrl+D
+        return strdup("");
     }
 
-    cmdline[pos] = '\0';
+    // Save non-empty command in Readline’s history
+    add_history(cmdline);
+
     return cmdline;
 }
 
-// ==============================
-// Function: tokenize()
-// ==============================
+/* ==========================================================
+ * tokenize()
+ * ========================================================== */
 char** tokenize(char* cmdline) {
-    // Edge case: empty command line
     if (cmdline == NULL || cmdline[0] == '\0' || cmdline[0] == '\n') {
         return NULL;
     }
@@ -54,7 +53,7 @@ char** tokenize(char* cmdline) {
     int argnum = 0;
 
     while (*cp != '\0' && argnum < MAXARGS) {
-        while (*cp == ' ' || *cp == '\t') cp++; // Skip whitespace
+        while (*cp == ' ' || *cp == '\t') cp++;
         if (*cp == '\0') break;
 
         start = cp;
@@ -67,7 +66,7 @@ char** tokenize(char* cmdline) {
         argnum++;
     }
 
-    if (argnum == 0) { // No arguments parsed
+    if (argnum == 0) {
         for(int i = 0; i < MAXARGS + 1; i++) free(arglist[i]);
         free(arglist);
         return NULL;
@@ -77,38 +76,18 @@ char** tokenize(char* cmdline) {
     return arglist;
 }
 
-// ==============================
-// Function: add_to_history()
-// ==============================
-void add_to_history(char *cmdline) {
-    if (cmdline == NULL || strlen(cmdline) == 0)
-        return;
-
-    if (hist_count < HISTORY_SIZE) {
-        history[hist_count++] = strdup(cmdline);
-    } else {
-        free(history[0]);
-        for (int i = 1; i < HISTORY_SIZE; i++)
-            history[i - 1] = history[i];
-        history[HISTORY_SIZE - 1] = strdup(cmdline);
-    }
-}
-
-// ==============================
-// Function: handle_builtin()
-// ==============================
+/* ==========================================================
+ * handle_builtin() — same as before
+ * ========================================================== */
 int handle_builtin(char **args)
 {
     if (args == NULL || args[0] == NULL)
-        return 1;  // Empty command
+        return 1;
 
-    // exit command
     if (strcmp(args[0], "exit") == 0) {
         printf("Exiting shell...\n");
         exit(0);
     }
-
-    // cd command
     else if (strcmp(args[0], "cd") == 0) {
         if (args[1] == NULL)
             fprintf(stderr, "cd: expected argument\n");
@@ -116,34 +95,28 @@ int handle_builtin(char **args)
             perror("cd");
         return 1;
     }
-
-    // help command
     else if (strcmp(args[0], "help") == 0) {
         printf("Built-in commands:\n");
-        printf("  cd <dir>     - Change directory\n");
-        printf("  help         - Show this help message\n");
-        printf("  exit         - Exit the shell\n");
-        printf("  jobs         - Show background jobs (not yet implemented)\n");
-        printf("  history      - Show command history\n");
-        printf("  !n           - Re-run nth command from history\n");
+        printf("  cd <dir>     — change directory\n");
+        printf("  help         — show help message\n");
+        printf("  exit         — exit the shell\n");
+        printf("  jobs         — placeholder for job control\n");
+        printf("  history      — show recent commands\n");
         return 1;
     }
-
-    // jobs command (placeholder)
     else if (strcmp(args[0], "jobs") == 0) {
         printf("Job control not yet implemented.\n");
         return 1;
     }
-
-    // history command
     else if (strcmp(args[0], "history") == 0) {
-        for (int i = 0; i < hist_count; i++) {
-            printf("%d  %s\n", i + 1, history[i]);
+        HIST_ENTRY **the_history = history_list();
+        if (the_history) {
+            for (int i = 0; the_history[i]; i++)
+                printf("%d  %s\n", i + 1, the_history[i]->line);
         }
         return 1;
     }
 
-    // Not a built-in command
     return 0;
 }
 
