@@ -1,4 +1,10 @@
 #include "shell.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>   // ✅ for pid_t
+#include <sys/wait.h>    // ✅ for waitpid()
+#include <string.h>  
 
 int execute(char* arglist[]) {
     int status;

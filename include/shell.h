@@ -1,22 +1,20 @@
 #ifndef SHELL_H
 #define SHELL_H
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <errno.h>
+#include <stdio.h>   // ✅ Needed for FILE, printf, stdin, etc.
+#include <stdlib.h>  // ✅ For malloc, free, exit
+#include <string.h>  // ✅ For strcmp, strcpy, strlen
+#include <unistd.h>  // ✅ For chdir, fork, execvp
 
 #define MAX_LEN 512
-#define MAXARGS 10
-#define ARGLEN 30
-#define PROMPT "FCIT> "
+#define MAXARGS 64
+#define ARGLEN  64
 
-// Function prototypes
+// Function Prototypes
 char* read_cmd(char* prompt, FILE* fp);
 char** tokenize(char* cmdline);
 int execute(char** arglist);
+int handle_builtin(char **args);
 
-#endif // SHELL_H
+#endif
+
