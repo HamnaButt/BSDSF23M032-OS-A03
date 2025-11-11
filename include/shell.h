@@ -11,27 +11,23 @@
 #define MAXARGS 64
 #define ARGLEN  64
 
-// Core shell functions
+/* Core shell functions */
 char* read_cmd(char* prompt, FILE* fp);
 char** tokenize(char* cmdline);
-// execute returns 0 for foreground completion, or pid (>0) for background start
-int execute(char** arglist, int background);
 int handle_builtin(char **args);
 
-// New: helper that runs a raw command line (does tokenization, expansion, builtins)
-// returns pid (>0) if started in background, or exit status (0..255) for foreground success/failure,
-// or negative on error.
+/* Execution */
+int execute(char **arglist, int background);
 int run_command_line(char *rawline, int background);
-
-// New: used by if-then-else to get the exit status of a tokenized command
+// Add under Execution section
 int execute_get_status(char **args);
 
-// job helpers used by main
+/* Job helpers */
 void reap_jobs(void);
 void add_job(pid_t pid, const char *cmd);
 void remove_job(pid_t pid);
 
-// Variable helpers
+/* Variable helpers */
 void set_var(const char *name, const char *value);
 const char *get_var(const char *name);
 void print_all_vars(void);

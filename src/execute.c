@@ -3,210 +3,115 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
+#include <ctype.h>
 #include <sys/wait.h>
-#include <fcntl.h>
 
-/* Helper: find pipe token index; returns -1 if none */
-int find_pipe(char **arglist) {
-    for (int i = 0; arglist[i] != NULL; i++) {
-        if (strcmp(arglist[i], "|") == 0) return i;
+/* Expand variables in a token */
+static char *expand_string(const char *orig) {
+    if (!orig) return NULL;
+    if (strchr(orig, '$') == NULL) return strdup(orig);
+
+    char buf[ARGLEN * 4] = {0};
+    size_t bi = 0;
+    for (size_t i = 0; i < strlen(orig); ) {
+        if (orig[i] == '$') {
+            i++;
+            char name[ARGLEN] = {0};
+            int ni = 0;
+            while (i < strlen(orig) && (isalnum(orig[i]) || orig[i]=='_')) {
+                if (ni < ARGLEN-1) name[ni++] = orig[i];
+                i++;
+            }
+            name[ni] = '\0';
+            const char *val = get_var(name);
+            if (val) strncat(buf, val, sizeof(buf) - strlen(buf) - 1);
+        } else {
+            if (bi < sizeof(buf)-1) buf[bi++] = orig[i];
+            i++;
+        }
     }
-    return -1;
+    buf[bi] = '\0';
+    return strdup(buf);
 }
 
-/* execute: if background == 1 then parent does NOT wait and function returns pid (>0)
-   if background == 0 then blocks until child(s) complete and returns 0 (legacy) */
-int execute(char **args, int background)
-{
-    int pipe_index = find_pipe(args);
+static void expand_args_inplace(char **args) {
+    for (int i = 0; args[i]; i++) {
+        char *expanded = expand_string(args[i]);
+        free(args[i]);
+        args[i] = strdup(expanded);
+        free(expanded);
+    }
+}
 
-    /* ---------- Piped commands ---------- */
-    if (pipe_index != -1) {
-        args[pipe_index] = NULL;
-        char **left = args;
-        char **right = &args[pipe_index + 1];
+/* Built-in commands */
+static int handle_builtin_execute(char **args) {
+    if (!args || !args[0]) return 0;
+    if (strcmp(args[0], "exit") == 0) { free_vars(); exit(0); }
+    if (strcmp(args[0], "set") == 0) { print_all_vars(); return 1; }
+    return 0;
+}
 
-        int fd[2];
-        if (pipe(fd) == -1) {
-            perror("pipe");
-            return -1;
-        }
+/* ================= execute() ================= */
+int execute(char **arglist, int background) {
+    if (!arglist || !arglist[0]) return 0;
 
-        pid_t pid1 = fork();
-        if (pid1 == 0) {
-            dup2(fd[1], STDOUT_FILENO);
-            close(fd[0]);
-            close(fd[1]);
-            execvp(left[0], left);
-            perror("execvp (left)");
-            exit(1);
-        }
-
-        pid_t pid2 = fork();
-        if (pid2 == 0) {
-            dup2(fd[0], STDIN_FILENO);
-            close(fd[0]);
-            close(fd[1]);
-            execvp(right[0], right);
-            perror("execvp (right)");
-            exit(1);
-        }
-
-        // parent closes pipe ends
-        close(fd[0]);
-        close(fd[1]);
-
-        if (background) {
-            // In background: do not wait; return pid2 as job pid if available or pid1
-            return pid2 > 0 ? pid2 : pid1;
-        } else {
-            waitpid(pid1, NULL, 0);
-            waitpid(pid2, NULL, 0);
-            return 0;
-        }
+    // Variable assignment
+    char *eq = strchr(arglist[0], '=');
+    if (eq && eq != arglist[0]) {
+        *eq = '\0';
+        char *name = arglist[0];
+        char *value = eq + 1;
+        if (value[0]=='"' && value[strlen(value)-1]=='"') { value[strlen(value)-1]='\0'; value++; }
+        set_var(name, value);
+        return 0;
     }
 
-    /* ---------- Redirection / normal execution ---------- */
-    int in_redirect = -1, out_redirect = -1, append_redirect = -1;
-    for (int i = 0; args[i] != NULL; i++) {
-        if (strcmp(args[i], "<") == 0) in_redirect = i;
-        else if (strcmp(args[i], ">") == 0) out_redirect = i;
-        else if (strcmp(args[i], ">>") == 0) append_redirect = i;
-    }
+    // Expand variables
+    expand_args_inplace(arglist);
 
+    // Built-in commands
+    if (handle_builtin_execute(arglist)) return 0;
+
+    // Fork + exec
     pid_t pid = fork();
-    if (pid == 0) {
-        // Input redirect
-        if (in_redirect != -1) {
-            int fd = open(args[in_redirect + 1], O_RDONLY);
-            if (fd < 0) { perror("open input"); exit(1); }
-            dup2(fd, STDIN_FILENO);
-            close(fd);
-            args[in_redirect] = NULL;
-        }
-        // Output overwrite
-        if (out_redirect != -1) {
-            int fd = open(args[out_redirect + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (fd < 0) { perror("open output"); exit(1); }
-            dup2(fd, STDOUT_FILENO);
-            close(fd);
-            args[out_redirect] = NULL;
-        }
-        // Append
-        if (append_redirect != -1) {
-            int fd = open(args[append_redirect + 1], O_WRONLY | O_CREAT | O_APPEND, 0644);
-            if (fd < 0) { perror("open append"); exit(1); }
-            dup2(fd, STDOUT_FILENO);
-            close(fd);
-            args[append_redirect] = NULL;
-        }
-
-        execvp(args[0], args);
+    if (pid==0) {
+        execvp(arglist[0], arglist);
         perror("execvp");
         exit(1);
-    }
-    else if (pid > 0) {
-        if (background) {
-            // Do not wait; parent returns pid for job tracking
-            return pid;
-        } else {
+    } else if (pid > 0) {
+        if (!background) {
             int status;
             waitpid(pid, &status, 0);
-            return 0;
+            return status;
+        } else {
+            add_job(pid, arglist[0]);
+            return pid;
         }
-    }
-    else {
+    } else {
         perror("fork");
         return -1;
     }
 }
+int execute_get_status(char **args) {
+    if (!args || !args[0]) return -1;
 
-/* ---------- New helper: execute_get_status ----------
-   Execute tokenized args and return the child's exit status (0..255) for foreground.
-   For background, returns the child's pid (>0). On error returns -1.
-*/
-int execute_get_status(char **args)
-{
-    int pipe_index = find_pipe(args);
+    // Expand variables
+    expand_args_inplace(args);
 
-    if (pipe_index != -1) {
-        args[pipe_index] = NULL;
-        char **left = args;
-        char **right = &args[pipe_index + 1];
-
-        int fd[2];
-        if (pipe(fd) == -1) {
-            perror("pipe");
-            return -1;
-        }
-
-        pid_t pid1 = fork();
-        if (pid1 == 0) {
-            dup2(fd[1], STDOUT_FILENO);
-            close(fd[0]); close(fd[1]);
-            execvp(left[0], left);
-            perror("execvp (left)");
-            exit(127);
-        }
-
-        pid_t pid2 = fork();
-        if (pid2 == 0) {
-            dup2(fd[0], STDIN_FILENO);
-            close(fd[0]); close(fd[1]);
-            execvp(right[0], right);
-            perror("execvp (right)");
-            exit(127);
-        }
-
-        close(fd[0]); close(fd[1]);
-
-        int status1 = 0, status2 = 0;
-        waitpid(pid1, &status1, 0);
-        waitpid(pid2, &status2, 0);
-
-        if (WIFEXITED(status2)) return WEXITSTATUS(status2);
-        if (WIFEXITED(status1)) return WEXITSTATUS(status1);
-        return 1;
-    }
-
-    /* Redirection / normal execution with status returned */
-    int in_redirect = -1, out_redirect = -1, append_redirect = -1;
-    for (int i = 0; args[i] != NULL; i++) {
-        if (strcmp(args[i], "<") == 0) in_redirect = i;
-        else if (strcmp(args[i], ">") == 0) out_redirect = i;
-        else if (strcmp(args[i], ">>") == 0) append_redirect = i;
-    }
+    // Built-in commands return 0 for success
+    if (handle_builtin_execute(args)) return 0;
 
     pid_t pid = fork();
     if (pid == 0) {
-        if (in_redirect != -1) {
-            int fd = open(args[in_redirect + 1], O_RDONLY);
-            if (fd < 0) { perror("open input"); exit(127); }
-            dup2(fd, STDIN_FILENO); close(fd); args[in_redirect] = NULL;
-        }
-        if (out_redirect != -1) {
-            int fd = open(args[out_redirect + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (fd < 0) { perror("open output"); exit(127); }
-            dup2(fd, STDOUT_FILENO); close(fd); args[out_redirect] = NULL;
-        }
-        if (append_redirect != -1) {
-            int fd = open(args[append_redirect + 1], O_WRONLY | O_CREAT | O_APPEND, 0644);
-            if (fd < 0) { perror("open append"); exit(127); }
-            dup2(fd, STDOUT_FILENO); close(fd); args[append_redirect] = NULL;
-        }
-
         execvp(args[0], args);
         perror("execvp");
-        exit(127);
-    }
-    else if (pid > 0) {
+        exit(1);
+    } else if (pid > 0) {
         int status;
         waitpid(pid, &status, 0);
         if (WIFEXITED(status)) return WEXITSTATUS(status);
-        return 1;
-    }
-    else {
+        else return -1;
+    } else {
         perror("fork");
         return -1;
     }
